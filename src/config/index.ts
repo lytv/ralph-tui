@@ -13,7 +13,8 @@ import type {
   RuntimeOptions,
   ConfigValidationResult,
 } from './types.js';
-import { DEFAULT_CONFIG } from './types.js';
+import { DEFAULT_CONFIG, DEFAULT_ERROR_HANDLING } from './types.js';
+import type { ErrorHandlingConfig } from '../engine/types.js';
 import type { AgentPluginConfig } from '../plugins/agents/types.js';
 import type { TrackerPluginConfig } from '../plugins/trackers/types.js';
 import { getAgentRegistry } from '../plugins/agents/registry.js';
@@ -186,6 +187,14 @@ export async function buildConfig(
     };
   }
 
+  // Build error handling config, applying CLI overrides
+  const errorHandling: ErrorHandlingConfig = {
+    ...DEFAULT_ERROR_HANDLING,
+    ...(storedConfig.errorHandling ?? {}),
+    ...(options.onError ? { strategy: options.onError } : {}),
+    ...(options.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
+  };
+
   return {
     agent: agentConfig,
     tracker: trackerConfig,
@@ -203,6 +212,7 @@ export async function buildConfig(
     prdPath: options.prdPath,
     model: options.model,
     showTui: !options.headless,
+    errorHandling,
   };
 }
 

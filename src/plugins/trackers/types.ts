@@ -302,6 +302,13 @@ export interface TrackerPlugin {
   sync(): Promise<SyncResult>;
 
   /**
+   * Check if a specific task is ready to work on (no unresolved dependencies).
+   * @param id The task ID to check
+   * @returns true if the task is ready, false if blocked or not found
+   */
+  isTaskReady(id: string): Promise<boolean>;
+
+  /**
    * Get setup questions for configuring this plugin.
    * Used by the setup wizard to collect configuration.
    * @returns Array of questions to ask during setup

@@ -1,10 +1,35 @@
 /**
  * ABOUTME: Type definitions for the Ralph execution engine.
- * Defines events, iteration results, and engine state types.
+ * Defines events, iteration results, engine state types, and error handling strategies.
  */
 
 import type { TrackerTask } from '../plugins/trackers/types.js';
 import type { AgentExecutionResult } from '../plugins/agents/types.js';
+
+/**
+ * Strategy for handling agent execution errors.
+ * - 'retry': Retry the same task up to maxRetries times
+ * - 'skip': Skip the failed task and move to the next one
+ * - 'abort': Stop the engine immediately on error
+ */
+export type ErrorHandlingStrategy = 'retry' | 'skip' | 'abort';
+
+/**
+ * Configuration for error handling behavior.
+ */
+export interface ErrorHandlingConfig {
+  /** Strategy to use when an agent execution fails */
+  strategy: ErrorHandlingStrategy;
+
+  /** Maximum number of retries (only used when strategy is 'retry') */
+  maxRetries: number;
+
+  /** Delay in milliseconds between retries */
+  retryDelayMs: number;
+
+  /** Whether to continue on non-zero exit codes */
+  continueOnNonZeroExit: boolean;
+}
 
 /**
  * Status of an iteration
@@ -62,6 +87,8 @@ export type EngineEventType =
   | 'iteration:started'
   | 'iteration:completed'
   | 'iteration:failed'
+  | 'iteration:retrying'
+  | 'iteration:skipped'
   | 'task:selected'
   | 'task:completed'
   | 'agent:output'
@@ -151,6 +178,40 @@ export interface IterationFailedEvent extends EngineEventBase {
   error: string;
   /** Task that failed */
   task: TrackerTask;
+  /** Action that will be taken */
+  action: 'retry' | 'skip' | 'abort';
+}
+
+/**
+ * Iteration retrying event
+ */
+export interface IterationRetryingEvent extends EngineEventBase {
+  type: 'iteration:retrying';
+  /** Iteration number */
+  iteration: number;
+  /** Retry attempt number (1-based) */
+  retryAttempt: number;
+  /** Maximum retries allowed */
+  maxRetries: number;
+  /** Task being retried */
+  task: TrackerTask;
+  /** Error from previous attempt */
+  previousError: string;
+  /** Delay before retry in milliseconds */
+  delayMs: number;
+}
+
+/**
+ * Iteration skipped event
+ */
+export interface IterationSkippedEvent extends EngineEventBase {
+  type: 'iteration:skipped';
+  /** Iteration number */
+  iteration: number;
+  /** Task that was skipped */
+  task: TrackerTask;
+  /** Reason for skipping */
+  reason: string;
 }
 
 /**
@@ -210,6 +271,8 @@ export type EngineEvent =
   | IterationStartedEvent
   | IterationCompletedEvent
   | IterationFailedEvent
+  | IterationRetryingEvent
+  | IterationSkippedEvent
   | TaskSelectedEvent
   | TaskCompletedEvent
   | AgentOutputEvent

@@ -1,6 +1,7 @@
 /**
  * ABOUTME: Execution engine for Ralph TUI agent loop.
  * Handles the iteration cycle: select task → inject prompt → run agent → check result → update tracker.
+ * Supports configurable error handling strategies: retry, skip, abort.
  */
 
 import { join } from 'node:path';
@@ -10,6 +11,8 @@ import type {
   EngineEventListener,
   EngineState,
   EngineStatus,
+  ErrorHandlingConfig,
+  ErrorHandlingStrategy,
   IterationResult,
   IterationStatus,
 } from './types.js';
@@ -71,6 +74,10 @@ export class ExecutionEngine {
   private state: EngineState;
   private currentExecution: AgentExecutionHandle | null = null;
   private shouldStop = false;
+  /** Track retry attempts per task */
+  private retryCountMap: Map<string, number> = new Map();
+  /** Track skipped tasks to avoid retrying them */
+  private skippedTasks: Set<string> = new Set();
 
   constructor(config: RalphConfig) {
     this.config = config;
@@ -223,8 +230,8 @@ export class ExecutionEngine {
         break;
       }
 
-      // Get next task
-      const task = await this.tracker!.getNextTask({ ready: true });
+      // Get next task (excluding skipped tasks)
+      const task = await this.getNextAvailableTask();
       if (!task) {
         this.emit({
           type: 'engine:stopped',
@@ -236,13 +243,19 @@ export class ExecutionEngine {
         break;
       }
 
-      // Run iteration
-      const result = await this.runIteration(task);
-      this.state.iterations.push(result);
+      // Run iteration with error handling
+      const result = await this.runIterationWithErrorHandling(task);
 
-      // Handle iteration result
-      if (result.taskCompleted) {
-        this.state.tasksCompleted++;
+      // Check if we should abort
+      if (result.status === 'failed' && this.config.errorHandling.strategy === 'abort') {
+        this.emit({
+          type: 'engine:stopped',
+          timestamp: new Date().toISOString(),
+          reason: 'error',
+          totalIterations: this.state.currentIteration,
+          tasksCompleted: this.state.tasksCompleted,
+        });
+        break;
       }
 
       // Update session
@@ -257,6 +270,151 @@ export class ExecutionEngine {
         await this.delay(this.config.iterationDelay);
       }
     }
+  }
+
+  /**
+   * Get the next available task, excluding skipped ones
+   */
+  private async getNextAvailableTask(): Promise<TrackerTask | null> {
+    const tasks = await this.tracker!.getTasks({ status: ['open', 'in_progress'] });
+
+    for (const task of tasks) {
+      // Skip tasks that have been marked as skipped
+      if (this.skippedTasks.has(task.id)) {
+        continue;
+      }
+
+      // Check if task is ready (no unresolved dependencies)
+      const isReady = await this.tracker!.isTaskReady(task.id);
+      if (isReady) {
+        return task;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Run iteration with error handling strategy
+   */
+  private async runIterationWithErrorHandling(task: TrackerTask): Promise<IterationResult> {
+    const errorConfig = this.config.errorHandling;
+    let result = await this.runIteration(task);
+    this.state.iterations.push(result);
+
+    // Handle success
+    if (result.status !== 'failed') {
+      if (result.taskCompleted) {
+        this.state.tasksCompleted++;
+        // Clear retry count on success
+        this.retryCountMap.delete(task.id);
+      }
+      return result;
+    }
+
+    // Handle failure according to strategy
+    const errorMessage = result.error ?? 'Unknown error';
+
+    switch (errorConfig.strategy) {
+      case 'retry': {
+        const currentRetries = this.retryCountMap.get(task.id) ?? 0;
+
+        if (currentRetries < errorConfig.maxRetries) {
+          // Emit failed event with retry action
+          this.emit({
+            type: 'iteration:failed',
+            timestamp: new Date().toISOString(),
+            iteration: this.state.currentIteration,
+            error: errorMessage,
+            task,
+            action: 'retry',
+          });
+
+          // Emit retry event
+          this.emit({
+            type: 'iteration:retrying',
+            timestamp: new Date().toISOString(),
+            iteration: this.state.currentIteration,
+            retryAttempt: currentRetries + 1,
+            maxRetries: errorConfig.maxRetries,
+            task,
+            previousError: errorMessage,
+            delayMs: errorConfig.retryDelayMs,
+          });
+
+          // Update retry count
+          this.retryCountMap.set(task.id, currentRetries + 1);
+
+          // Wait before retry
+          if (errorConfig.retryDelayMs > 0 && !this.shouldStop) {
+            await this.delay(errorConfig.retryDelayMs);
+          }
+
+          // Recursively retry
+          if (!this.shouldStop) {
+            return this.runIterationWithErrorHandling(task);
+          }
+        } else {
+          // Max retries exceeded - treat as skip
+          const skipReason = `Max retries (${errorConfig.maxRetries}) exceeded: ${errorMessage}`;
+          this.emit({
+            type: 'iteration:failed',
+            timestamp: new Date().toISOString(),
+            iteration: this.state.currentIteration,
+            error: skipReason,
+            task,
+            action: 'skip',
+          });
+          this.emitSkipEvent(task, skipReason);
+          this.skippedTasks.add(task.id);
+          this.retryCountMap.delete(task.id);
+        }
+        break;
+      }
+
+      case 'skip': {
+        // Emit failed event with skip action
+        this.emit({
+          type: 'iteration:failed',
+          timestamp: new Date().toISOString(),
+          iteration: this.state.currentIteration,
+          error: errorMessage,
+          task,
+          action: 'skip',
+        });
+        this.emitSkipEvent(task, errorMessage);
+        this.skippedTasks.add(task.id);
+        break;
+      }
+
+      case 'abort': {
+        // Emit failed event with abort action
+        this.emit({
+          type: 'iteration:failed',
+          timestamp: new Date().toISOString(),
+          iteration: this.state.currentIteration,
+          error: errorMessage,
+          task,
+          action: 'abort',
+        });
+        break;
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Emit a skip event for a task
+   */
+  private emitSkipEvent(task: TrackerTask, reason: string): void {
+    this.emit({
+      type: 'iteration:skipped',
+      timestamp: new Date().toISOString(),
+      iteration: this.state.currentIteration,
+      task,
+      reason,
+    });
   }
 
   /**
@@ -386,13 +544,9 @@ export class ExecutionEngine {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
 
-      this.emit({
-        type: 'iteration:failed',
-        timestamp: endedAt.toISOString(),
-        iteration,
-        error: errorMessage,
-        task,
-      });
+      // Note: We don't emit iteration:failed here anymore - it's handled
+      // by runIterationWithErrorHandling which determines the action.
+      // This keeps the error handling logic centralized.
 
       return {
         iteration,
@@ -524,6 +678,8 @@ export type {
   EngineEventListener,
   EngineState,
   EngineStatus,
+  ErrorHandlingConfig,
+  ErrorHandlingStrategy,
   IterationResult,
   IterationStatus,
 };

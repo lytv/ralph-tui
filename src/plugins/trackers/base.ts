@@ -133,6 +133,21 @@ export abstract class BaseTrackerPlugin implements TrackerPlugin {
   }
 
   /**
+   * Check if a specific task is ready to work on.
+   * Default implementation fetches all tasks and checks dependencies.
+   * Subclasses can override for efficiency.
+   */
+  async isTaskReady(id: string): Promise<boolean> {
+    const task = await this.getTask(id);
+    if (!task) {
+      return false;
+    }
+
+    const allTasks = await this.getTasks();
+    return this.checkTaskReady(task, allTasks);
+  }
+
+  /**
    * Get setup questions for configuring this plugin.
    * Subclasses should override to provide their specific questions.
    */
@@ -214,7 +229,7 @@ export abstract class BaseTrackerPlugin implements TrackerPlugin {
 
     // Filter to ready tasks (no unresolved dependencies)
     if (filter.ready) {
-      result = result.filter((t) => this.isTaskReady(t, tasks));
+      result = result.filter((t) => this.checkTaskReady(t, tasks));
     }
 
     // Apply offset
@@ -232,8 +247,9 @@ export abstract class BaseTrackerPlugin implements TrackerPlugin {
 
   /**
    * Helper: Check if a task is ready (all dependencies resolved).
+   * Used internally for filtering and readiness checks.
    */
-  protected isTaskReady(task: TrackerTask, allTasks: TrackerTask[]): boolean {
+  protected checkTaskReady(task: TrackerTask, allTasks: TrackerTask[]): boolean {
     if (!task.dependsOn || task.dependsOn.length === 0) {
       return true;
     }

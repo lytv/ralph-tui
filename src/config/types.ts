@@ -5,6 +5,7 @@
 
 import type { AgentPluginConfig } from '../plugins/agents/types.js';
 import type { TrackerPluginConfig } from '../plugins/trackers/types.js';
+import type { ErrorHandlingConfig, ErrorHandlingStrategy } from '../engine/types.js';
 
 /**
  * Runtime options that can be passed via CLI flags
@@ -42,6 +43,12 @@ export interface RuntimeOptions {
 
   /** Run in headless mode (no TUI) */
   headless?: boolean;
+
+  /** Error handling strategy override */
+  onError?: ErrorHandlingStrategy;
+
+  /** Maximum retries for error handling */
+  maxRetries?: number;
 }
 
 /**
@@ -68,6 +75,9 @@ export interface StoredConfig {
 
   /** Output directory for iteration logs */
   outputDir?: string;
+
+  /** Error handling configuration */
+  errorHandling?: ErrorHandlingConfig;
 }
 
 /**
@@ -103,6 +113,9 @@ export interface RalphConfig {
 
   /** Whether to show TUI */
   showTui: boolean;
+
+  /** Error handling configuration */
+  errorHandling: ErrorHandlingConfig;
 }
 
 /**
@@ -120,6 +133,16 @@ export interface ConfigValidationResult {
 }
 
 /**
+ * Default error handling configuration
+ */
+export const DEFAULT_ERROR_HANDLING: ErrorHandlingConfig = {
+  strategy: 'skip',
+  maxRetries: 3,
+  retryDelayMs: 5000,
+  continueOnNonZeroExit: false,
+};
+
+/**
  * Default configuration values
  */
 export const DEFAULT_CONFIG: Omit<RalphConfig, 'agent' | 'tracker'> = {
@@ -128,4 +151,5 @@ export const DEFAULT_CONFIG: Omit<RalphConfig, 'agent' | 'tracker'> = {
   cwd: process.cwd(),
   outputDir: '.ralph-output',
   showTui: true,
+  errorHandling: DEFAULT_ERROR_HANDLING,
 };
