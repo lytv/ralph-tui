@@ -45,7 +45,11 @@ function getStatusDisplay(status: RalphStatus): { label: string; color: string; 
     case 'paused':
       return { label: 'Paused', color: colors.status.warning, indicator: statusIndicators.paused };
     case 'stopped':
-      return { label: 'Completed', color: colors.fg.muted, indicator: statusIndicators.done };
+      return { label: 'Stopped', color: colors.fg.muted, indicator: statusIndicators.stopped };
+    case 'complete':
+      return { label: 'All Tasks Complete', color: colors.status.success, indicator: statusIndicators.complete };
+    case 'idle':
+      return { label: 'No More Tasks', color: colors.fg.muted, indicator: statusIndicators.idle };
     case 'error':
       return { label: 'Failed', color: colors.status.error, indicator: statusIndicators.blocked };
   }

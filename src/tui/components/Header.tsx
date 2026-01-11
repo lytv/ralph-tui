@@ -20,6 +20,10 @@ function getStatusDisplay(status: RalphStatus): { indicator: string; color: stri
       return { indicator: statusIndicators.paused, color: colors.status.warning, label: 'Paused' };
     case 'stopped':
       return { indicator: statusIndicators.stopped, color: colors.fg.muted, label: 'Stopped' };
+    case 'complete':
+      return { indicator: statusIndicators.complete, color: colors.status.success, label: 'Complete' };
+    case 'idle':
+      return { indicator: statusIndicators.idle, color: colors.fg.muted, label: 'Idle' };
     case 'error':
       return { indicator: statusIndicators.blocked, color: colors.status.error, label: 'Error' };
   }

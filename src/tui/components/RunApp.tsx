@@ -53,29 +53,6 @@ export interface RunAppProps {
 }
 
 /**
- * Convert engine status to Ralph status
- */
-function engineStatusToRalphStatus(
-  engineStatus: string,
-  hasError: boolean
-): RalphStatus {
-  if (hasError) return 'error';
-  switch (engineStatus) {
-    case 'running':
-      return 'running';
-    case 'pausing':
-      return 'pausing';
-    case 'paused':
-      return 'paused';
-    case 'stopping':
-    case 'idle':
-      return 'stopped';
-    default:
-      return 'stopped';
-  }
-}
-
-/**
  * Convert tracker status to TUI task status.
  * Maps: open -> pending, in_progress -> active, completed -> done, etc.
  */
@@ -135,7 +112,6 @@ export function RunApp({
   const [currentIteration, setCurrentIteration] = useState(0);
   const [currentOutput, setCurrentOutput] = useState('');
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [hasError, setHasError] = useState(false);
   const [epicName] = useState('Ralph');
   const [trackerName] = useState('beads');
   const [agentName] = useState('claude');
@@ -168,9 +144,15 @@ export function RunApp({
           break;
 
         case 'engine:stopped':
-          setStatus('stopped');
+          // Map stop reason to appropriate TUI status for display
           if (event.reason === 'error') {
-            setHasError(true);
+            setStatus('error');
+          } else if (event.reason === 'completed') {
+            setStatus('complete');
+          } else if (event.reason === 'no_tasks') {
+            setStatus('idle');
+          } else {
+            setStatus('stopped');
           }
           break;
 
@@ -454,7 +436,7 @@ export function RunApp({
     >
       {/* Header */}
       <Header
-        status={engineStatusToRalphStatus(engine.getStatus(), hasError)}
+        status={status}
         epicName={epicName}
         elapsedTime={elapsedTime}
         trackerName={trackerName || 'beads'}
@@ -463,7 +445,7 @@ export function RunApp({
       {/* Progress Dashboard - toggleable with 'd' key */}
       {showDashboard && (
         <ProgressDashboard
-          status={engineStatusToRalphStatus(engine.getStatus(), hasError)}
+          status={status}
           completedTasks={completedTasks}
           totalTasks={totalTasks}
           currentIteration={currentIteration}

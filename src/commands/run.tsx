@@ -324,6 +324,10 @@ function RunAppWrapper({
 
 /**
  * Run the execution engine with TUI
+ *
+ * IMPORTANT: The TUI stays open until the user explicitly quits (q key or Ctrl+C).
+ * The engine may stop for various reasons (all tasks done, max iterations, no tasks, error)
+ * but the TUI remains visible so the user can review results before exiting.
  */
 async function runWithTui(
   engine: ExecutionEngine,
@@ -334,6 +338,7 @@ async function runWithTui(
   let showDialogCallback: (() => void) | null = null;
   let hideDialogCallback: (() => void) | null = null;
   let cancelledCallback: (() => void) | null = null;
+  let resolveQuitPromise: (() => void) | null = null;
 
   const renderer = await createCliRenderer({
     exitOnCtrlC: false, // We handle this ourselves
@@ -366,17 +371,18 @@ async function runWithTui(
   // Create cleanup function
   const cleanup = async (): Promise<void> => {
     interruptHandler.dispose();
-    await engine.dispose();
+    // Note: don't dispose engine here - it may already be stopped
     renderer.destroy();
   };
 
-  // Graceful shutdown: stop engine, save state, clean up
+  // Graceful shutdown: save state, clean up, and resolve the quit promise
+  // This is called when the user explicitly quits (q key or Ctrl+C confirmation)
   const gracefulShutdown = async (): Promise<void> => {
-    // Save interrupted state
-    currentState = { ...currentState, status: 'interrupted' };
+    // Save current state (may be completed, interrupted, etc.)
     await savePersistedSession(currentState);
     await cleanup();
-    process.exit(0);
+    // Resolve the quit promise to let the main function continue
+    resolveQuitPromise?.();
   };
 
   // Force quit: immediate exit
@@ -433,12 +439,18 @@ async function runWithTui(
     }
   }, 10);
 
-  // Start the engine (this will run the loop)
+  // Start the engine (this will run the loop until it stops)
   await engine.start();
 
-  // Clean up
+  // Engine has stopped (max iterations, all complete, no tasks, or error)
+  // But we keep the TUI open so the user can review results
+  // Wait for user to explicitly quit (q key or Ctrl+C)
   clearInterval(checkCallbacks);
-  await cleanup();
+
+  // Create a promise that resolves when user quits
+  await new Promise<void>((resolve) => {
+    resolveQuitPromise = resolve;
+  });
 
   return currentState;
 }
