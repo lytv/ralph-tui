@@ -4,6 +4,7 @@
  */
 
 import type { TaskStatus, RalphStatus } from './theme.js';
+import type { IterationResult } from '../engine/types.js';
 
 /**
  * Task item displayed in the task list
@@ -76,4 +77,20 @@ export interface AppState {
   footer: FooterProps;
   leftPanel: LeftPanelProps;
   rightPanel: RightPanelProps;
+}
+
+/**
+ * Props for the IterationHistoryPanel component
+ */
+export interface IterationHistoryPanelProps {
+  /** List of iteration results */
+  iterations: IterationResult[];
+  /** Total number of iterations planned */
+  totalIterations: number;
+  /** Currently selected iteration index */
+  selectedIndex: number;
+  /** Current running iteration number (0 if none running) */
+  runningIteration: number;
+  /** Callback when Enter is pressed to drill into iteration details */
+  onIterationDrillDown?: (iteration: IterationResult) => void;
 }

@@ -13,7 +13,15 @@ import { Header } from './Header.js';
 import { Footer } from './Footer.js';
 import { LeftPanel } from './LeftPanel.js';
 import { RightPanel } from './RightPanel.js';
-import type { ExecutionEngine, EngineEvent } from '../../engine/index.js';
+import { IterationHistoryView } from './IterationHistoryView.js';
+import type { ExecutionEngine, EngineEvent, IterationResult } from '../../engine/index.js';
+
+/**
+ * View modes for the RunApp component
+ * - 'tasks': Show the task list (default)
+ * - 'iterations': Show the iteration history
+ */
+type ViewMode = 'tasks' | 'iterations';
 
 /**
  * Props for the RunApp component
@@ -25,6 +33,8 @@ export interface RunAppProps {
   onQuit?: () => Promise<void>;
   /** Callback when Enter is pressed on a task to drill into details */
   onTaskDrillDown?: (task: TaskItem) => void;
+  /** Callback when Enter is pressed on an iteration to drill into details */
+  onIterationDrillDown?: (iteration: IterationResult) => void;
 }
 
 /**
@@ -54,7 +64,7 @@ function engineStatusToRalphStatus(
 /**
  * Main RunApp component for execution view
  */
-export function RunApp({ engine, onQuit, onTaskDrillDown }: RunAppProps): ReactNode {
+export function RunApp({ engine, onQuit, onTaskDrillDown, onIterationDrillDown }: RunAppProps): ReactNode {
   const { width, height } = useTerminalDimensions();
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -65,6 +75,11 @@ export function RunApp({ engine, onQuit, onTaskDrillDown }: RunAppProps): ReactN
   const [hasError, setHasError] = useState(false);
   const [epicName] = useState('Ralph');
   const [trackerName] = useState('beads');
+  // Iteration history state
+  const [iterations, setIterations] = useState<IterationResult[]>([]);
+  const [totalIterations] = useState(10); // Default max iterations for display
+  const [viewMode, setViewMode] = useState<ViewMode>('tasks');
+  const [iterationSelectedIndex, setIterationSelectedIndex] = useState(0);
 
   // Subscribe to engine events
   useEffect(() => {
@@ -118,6 +133,17 @@ export function RunApp({ engine, onQuit, onTaskDrillDown }: RunAppProps): ReactN
               )
             );
           }
+          // Add iteration result to history
+          setIterations((prev) => {
+            // Replace existing iteration or add new
+            const existing = prev.findIndex((i) => i.iteration === event.result.iteration);
+            if (existing !== -1) {
+              const updated = [...prev];
+              updated[existing] = event.result;
+              return updated;
+            }
+            return [...prev, event.result];
+          });
           break;
 
         case 'iteration:failed':
@@ -180,6 +206,9 @@ export function RunApp({ engine, onQuit, onTaskDrillDown }: RunAppProps): ReactN
     setCurrentOutput(state.currentOutput);
   }, [engine]);
 
+  // Calculate the number of items in iteration history (iterations + pending)
+  const iterationHistoryLength = Math.max(iterations.length, totalIterations);
+
   // Handle keyboard navigation
   const handleKeyboard = useCallback(
     (key: { name: string }) => {
@@ -191,12 +220,20 @@ export function RunApp({ engine, onQuit, onTaskDrillDown }: RunAppProps): ReactN
 
         case 'up':
         case 'k':
-          setSelectedIndex((prev) => Math.max(0, prev - 1));
+          if (viewMode === 'tasks') {
+            setSelectedIndex((prev) => Math.max(0, prev - 1));
+          } else {
+            setIterationSelectedIndex((prev) => Math.max(0, prev - 1));
+          }
           break;
 
         case 'down':
         case 'j':
-          setSelectedIndex((prev) => Math.min(tasks.length - 1, prev + 1));
+          if (viewMode === 'tasks') {
+            setSelectedIndex((prev) => Math.min(tasks.length - 1, prev + 1));
+          } else {
+            setIterationSelectedIndex((prev) => Math.min(iterationHistoryLength - 1, prev + 1));
+          }
           break;
 
         case 'p':
@@ -215,16 +252,33 @@ export function RunApp({ engine, onQuit, onTaskDrillDown }: RunAppProps): ReactN
           }
           break;
 
+        case 'i':
+          // Toggle between tasks and iterations view
+          setViewMode((prev) => (prev === 'tasks' ? 'iterations' : 'tasks'));
+          break;
+
+        case 't':
+          // Switch to tasks view
+          setViewMode('tasks');
+          break;
+
         case 'return':
         case 'enter':
-          // Drill into selected task details
-          if (tasks[selectedIndex]) {
-            onTaskDrillDown?.(tasks[selectedIndex]);
+          if (viewMode === 'tasks') {
+            // Drill into selected task details
+            if (tasks[selectedIndex]) {
+              onTaskDrillDown?.(tasks[selectedIndex]);
+            }
+          } else {
+            // Drill into selected iteration details
+            if (iterations[iterationSelectedIndex]) {
+              onIterationDrillDown?.(iterations[iterationSelectedIndex]);
+            }
           }
           break;
       }
     },
-    [tasks, selectedIndex, status, engine, onQuit, onTaskDrillDown]
+    [tasks, selectedIndex, status, engine, onQuit, onTaskDrillDown, viewMode, iterations, iterationSelectedIndex, iterationHistoryLength, onIterationDrillDown]
   );
 
   useKeyboard(handleKeyboard);
@@ -269,7 +323,17 @@ export function RunApp({ engine, onQuit, onTaskDrillDown }: RunAppProps): ReactN
           height: contentHeight,
         }}
       >
-        <LeftPanel tasks={tasks} selectedIndex={selectedIndex} />
+        {viewMode === 'tasks' ? (
+          <LeftPanel tasks={tasks} selectedIndex={selectedIndex} />
+        ) : (
+          <IterationHistoryView
+            iterations={iterations}
+            totalIterations={totalIterations}
+            selectedIndex={iterationSelectedIndex}
+            runningIteration={currentIteration}
+            width={isCompact ? width : Math.floor(width * 0.5)}
+          />
+        )}
         <RightPanel
           selectedTask={selectedTask}
           currentIteration={currentIteration}
