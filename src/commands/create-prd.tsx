@@ -10,7 +10,7 @@ import * as readline from 'node:readline';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { PrdChatApp } from '../tui/components/PrdChatApp.js';
-import { loadStoredConfig } from '../config/index.js';
+import { loadStoredConfig, requireSetup } from '../config/index.js';
 import { getAgentRegistry } from '../plugins/agents/registry.js';
 import { registerBuiltinAgents } from '../plugins/agents/builtin/index.js';
 import type { AgentPlugin, AgentPluginConfig } from '../plugins/agents/types.js';
@@ -364,6 +364,11 @@ async function runChatMode(parsedArgs: CreatePrdArgs): Promise<void> {
  */
 export async function executeCreatePrdCommand(args: string[]): Promise<void> {
   const parsedArgs = parseCreatePrdArgs(args);
+  const cwd = parsedArgs.cwd || process.cwd();
+
+  // Verify setup is complete before running
+  await requireSetup(cwd, 'ralph-tui prime');
+
   await runChatMode(parsedArgs);
   process.exit(0);
 }
