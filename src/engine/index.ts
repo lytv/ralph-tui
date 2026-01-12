@@ -7,6 +7,7 @@
 import type {
   ActiveAgentState,
   ActiveAgentReason,
+  AgentRecoveryAttemptedEvent,
   AgentSwitchedEvent,
   AllAgentsLimitedEvent,
   EngineEvent,
@@ -41,6 +42,18 @@ import { renderPrompt } from '../templates/index.js';
  * Pattern to detect completion signal in agent output
  */
 const PROMISE_COMPLETE_PATTERN = /<promise>\s*COMPLETE\s*<\/promise>/i;
+
+/**
+ * Timeout for primary agent recovery test (5 seconds).
+ * This is intentionally short to avoid delays when testing if the rate limit has lifted.
+ */
+const PRIMARY_RECOVERY_TEST_TIMEOUT_MS = 5000;
+
+/**
+ * Minimal test prompt for checking rate limit status.
+ * Kept simple to minimize token usage and allow fast response.
+ */
+const PRIMARY_RECOVERY_TEST_PROMPT = 'Reply with just the word "ok".';
 
 /**
  * Build prompt for the agent based on task using the template system.
@@ -102,6 +115,8 @@ export class ExecutionEngine {
   private rateLimitConfig: Required<RateLimitHandlingConfig>;
   /** Track agents that have been rate-limited for the current task (cleared on task completion) */
   private rateLimitedAgents: Set<string> = new Set();
+  /** Primary agent instance - preserved when switching to fallback for recovery attempts */
+  private primaryAgentInstance: AgentPlugin | null = null;
 
   constructor(config: RalphConfig) {
     this.config = config;
@@ -152,6 +167,9 @@ export class ExecutionEngine {
         `Agent '${this.config.agent.plugin}' not available: ${detectResult.error}`
       );
     }
+
+    // Store reference to primary agent for recovery attempts
+    this.primaryAgentInstance = this.agent;
 
     // Initialize active agent state
     const now = new Date().toISOString();
@@ -312,6 +330,12 @@ export class ExecutionEngine {
           timestamp: new Date().toISOString(),
           fromIteration: this.state.currentIteration,
         });
+      }
+
+      // Attempt primary agent recovery at the start of each iteration
+      // This allows the engine to switch back to the preferred agent when rate limits lift
+      if (this.shouldRecoverPrimaryAgent()) {
+        await this.attemptPrimaryAgentRecovery();
       }
 
       // Check max iterations
@@ -1182,17 +1206,123 @@ export class ExecutionEngine {
   }
 
   /**
-   * Attempt to recover the primary agent.
-   * Called between iterations when rate limit may have expired.
+   * Attempt to recover the primary agent by testing if rate limit has lifted.
+   * Executes a minimal test prompt with short timeout to verify primary agent availability.
+   * If the test succeeds (no rate limit detected), switches back to primary agent.
+   *
+   * Called between iterations when recoverPrimaryBetweenIterations is enabled.
    * Returns true if recovery was successful.
+   */
+  private async attemptPrimaryAgentRecovery(): Promise<boolean> {
+    const primaryAgent = this.state.rateLimitState?.primaryAgent ?? this.config.agent.plugin;
+    const fallbackAgent = this.state.activeAgent?.plugin ?? '';
+
+    // Must have preserved primary agent instance
+    if (!this.primaryAgentInstance) {
+      console.log('[recovery] No primary agent instance available');
+      return false;
+    }
+
+    console.log(`[recovery] Testing if primary agent '${primaryAgent}' rate limit has lifted...`);
+    const startTime = Date.now();
+
+    try {
+      // Execute minimal test prompt with short timeout
+      const handle = this.primaryAgentInstance.execute(
+        PRIMARY_RECOVERY_TEST_PROMPT,
+        [],
+        {
+          cwd: this.config.cwd,
+          timeout: PRIMARY_RECOVERY_TEST_TIMEOUT_MS,
+        }
+      );
+
+      const result = await handle.promise;
+      const testDurationMs = Date.now() - startTime;
+
+      // Check for rate limit in the test output
+      const rateLimitResult = this.rateLimitDetector.detect({
+        stderr: result.stderr,
+        stdout: result.stdout,
+        exitCode: result.exitCode,
+        agentId: primaryAgent,
+      });
+
+      // Emit recovery attempted event
+      const event: AgentRecoveryAttemptedEvent = {
+        type: 'agent:recovery-attempted',
+        timestamp: new Date().toISOString(),
+        primaryAgent,
+        fallbackAgent,
+        success: !rateLimitResult.isRateLimit && result.status === 'completed',
+        testDurationMs,
+        rateLimitMessage: rateLimitResult.message,
+      };
+      this.emit(event);
+
+      if (rateLimitResult.isRateLimit) {
+        // Primary still rate limited
+        console.log(
+          `[recovery] Primary agent '${primaryAgent}' still rate limited: ${rateLimitResult.message ?? 'rate limit detected'}`
+        );
+        return false;
+      }
+
+      if (result.status !== 'completed') {
+        // Test failed for other reason (timeout, error, etc.)
+        console.log(
+          `[recovery] Primary agent test failed with status: ${result.status}`
+        );
+        return false;
+      }
+
+      // Recovery successful - switch back to primary
+      console.log(
+        `[recovery] Primary agent '${primaryAgent}' recovered! Switching back from '${fallbackAgent}'`
+      );
+      this.agent = this.primaryAgentInstance;
+      this.switchAgent(primaryAgent, 'primary');
+
+      // Clear rate-limited agents tracking since we're back on primary
+      this.rateLimitedAgents.clear();
+
+      return true;
+    } catch (error) {
+      const testDurationMs = Date.now() - startTime;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      // Emit recovery attempted event with failure
+      const event: AgentRecoveryAttemptedEvent = {
+        type: 'agent:recovery-attempted',
+        timestamp: new Date().toISOString(),
+        primaryAgent,
+        fallbackAgent,
+        success: false,
+        testDurationMs,
+        rateLimitMessage: errorMessage,
+      };
+      this.emit(event);
+
+      console.log(`[recovery] Primary agent test error: ${errorMessage}`);
+      return false;
+    }
+  }
+
+  /**
+   * Legacy method for backward compatibility.
+   * Use attemptPrimaryAgentRecovery() instead for full recovery with testing.
+   * @deprecated Use attemptPrimaryAgentRecovery() instead
    */
   recoverPrimaryAgent(): boolean {
     if (!this.shouldRecoverPrimaryAgent()) {
       return false;
     }
 
-    // Switch back to primary agent
+    // Switch back to primary agent without testing (legacy behavior)
     const primaryAgent = this.state.rateLimitState?.primaryAgent ?? this.config.agent.plugin;
+    if (this.primaryAgentInstance) {
+      this.agent = this.primaryAgentInstance;
+    }
     this.switchAgent(primaryAgent, 'primary');
     return true;
   }
@@ -1319,6 +1449,7 @@ export class ExecutionEngine {
 export type {
   ActiveAgentReason,
   ActiveAgentState,
+  AgentRecoveryAttemptedEvent,
   AgentSwitchedEvent,
   AllAgentsLimitedEvent,
   EngineEvent,

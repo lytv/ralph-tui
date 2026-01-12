@@ -207,6 +207,7 @@ export type EngineEventType =
   | 'agent:output'
   | 'agent:switched'
   | 'agent:all-limited'
+  | 'agent:recovery-attempted'
   | 'all:complete'
   | 'tasks:refreshed';
 
@@ -432,6 +433,24 @@ export interface AllAgentsLimitedEvent extends EngineEventBase {
 }
 
 /**
+ * Agent recovery attempted event - emitted when attempting to recover primary agent between iterations.
+ * Indicates whether the recovery test succeeded or if primary is still rate limited.
+ */
+export interface AgentRecoveryAttemptedEvent extends EngineEventBase {
+  type: 'agent:recovery-attempted';
+  /** Primary agent that was tested */
+  primaryAgent: string;
+  /** Fallback agent that was being used */
+  fallbackAgent: string;
+  /** Whether the recovery was successful (primary is no longer rate limited) */
+  success: boolean;
+  /** Duration of the test in milliseconds */
+  testDurationMs: number;
+  /** If recovery failed, the rate limit message detected */
+  rateLimitMessage?: string;
+}
+
+/**
  * All tasks complete event
  */
 export interface AllCompleteEvent extends EngineEventBase {
@@ -471,6 +490,7 @@ export type EngineEvent =
   | AgentOutputEvent
   | AgentSwitchedEvent
   | AllAgentsLimitedEvent
+  | AgentRecoveryAttemptedEvent
   | AllCompleteEvent
   | TasksRefreshedEvent;
 
