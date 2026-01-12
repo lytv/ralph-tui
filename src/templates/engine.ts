@@ -198,6 +198,28 @@ function extractAcceptanceCriteria(description: string | undefined): string {
 }
 
 /**
+ * Get acceptance criteria from task metadata or extract from description.
+ * JSON tracker stores criteria in metadata.acceptanceCriteria as an array.
+ * Beads tracker embeds criteria in the description text.
+ * @param task The task to extract criteria from
+ * @returns Formatted acceptance criteria string
+ */
+function getAcceptanceCriteria(task: TrackerTask): string {
+  // First check metadata (used by JSON tracker)
+  const metaCriteria = task.metadata?.acceptanceCriteria;
+  if (Array.isArray(metaCriteria) && metaCriteria.length > 0) {
+    // Format array as checklist
+    return metaCriteria
+      .filter((c): c is string => typeof c === 'string')
+      .map((c) => `- [ ] ${c}`)
+      .join('\n');
+  }
+
+  // Fall back to extracting from description (used by Beads tracker)
+  return extractAcceptanceCriteria(task.description);
+}
+
+/**
  * Build template variables from task and config.
  * @param task The current task
  * @param config The ralph configuration
@@ -213,7 +235,7 @@ export function buildTemplateVariables(
     taskId: task.id,
     taskTitle: task.title,
     taskDescription: task.description ?? '',
-    acceptanceCriteria: extractAcceptanceCriteria(task.description),
+    acceptanceCriteria: getAcceptanceCriteria(task),
     epicId: epic?.id ?? task.parentId ?? '',
     epicTitle: epic?.title ?? '',
     trackerName: config.tracker?.plugin ?? 'unknown',

@@ -38,13 +38,22 @@ function getPriorityColor(priority: TaskPriority): string {
 }
 
 /**
- * Parse acceptance criteria from description or dedicated field.
+ * Parse acceptance criteria from description, dedicated field, or metadata array.
  * Looks for markdown checklist items (- [ ] or - [x])
+ * JSON tracker stores criteria in metadata.acceptanceCriteria as string array.
  */
 function parseAcceptanceCriteria(
   description?: string,
-  acceptanceCriteria?: string
+  acceptanceCriteria?: string,
+  metadataCriteria?: unknown
 ): Array<{ text: string; checked: boolean }> {
+  // If metadata contains criteria array (from JSON tracker), use that
+  if (Array.isArray(metadataCriteria) && metadataCriteria.length > 0) {
+    return metadataCriteria
+      .filter((c): c is string => typeof c === 'string')
+      .map((text) => ({ text, checked: false }));
+  }
+
   const content = acceptanceCriteria || description || '';
   const lines = content.split('\n');
   const criteria: Array<{ text: string; checked: boolean }> = [];
@@ -158,7 +167,9 @@ function MetadataRow({
 export function TaskDetailView({ task, onBack: _onBack }: TaskDetailViewProps): ReactNode {
   const statusColor = getTaskStatusColor(task.status);
   const statusIndicator = getTaskStatusIndicator(task.status);
-  const criteria = parseAcceptanceCriteria(task.description, task.acceptanceCriteria);
+  // Check metadata for acceptance criteria (JSON tracker stores it there)
+  const metadataCriteria = task.metadata?.acceptanceCriteria;
+  const criteria = parseAcceptanceCriteria(task.description, undefined, metadataCriteria);
   const cleanDescription = extractDescription(task.description);
 
   return (

@@ -64,6 +64,8 @@ export interface TaskItem {
   updatedAt?: string;
   /** Parent task/epic ID for hierarchical display */
   parentId?: string;
+  /** Tracker-specific metadata (varies by plugin) */
+  metadata?: Record<string, unknown>;
 }
 
 /**

@@ -133,6 +133,7 @@ function trackerTaskToTaskItem(task: TrackerTask): TaskItem {
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
     parentId: task.parentId,
+    metadata: task.metadata,
   };
 }
 
