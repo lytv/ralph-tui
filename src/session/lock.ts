@@ -20,7 +20,7 @@ import type { LockFile } from './types.js';
 /**
  * Directory for session data (relative to cwd)
  */
-const SESSION_DIR = '.ralph-session';
+const SESSION_DIR = '.ralph-tui';
 const LOCK_FILE = 'ralph.lock';
 
 /**

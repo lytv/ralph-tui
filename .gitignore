@@ -31,7 +31,7 @@ Thumbs.db
 .env.*.local
 
 # Ralph TUI runtime (keep config.toml, ignore runtime state)
-.ralph-session/
 .ralph-tui/session.json
 .ralph-tui/progress.md
 .ralph-tui/iterations/
+.ralph-tui/ralph.lock
