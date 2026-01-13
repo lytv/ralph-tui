@@ -21,6 +21,10 @@ pnpm-debug.log*
 *.tsbuildinfo
 *.tgz
 
+# Next.js
+.next/
+out/
+
 # IDE
 .idea/
 .vscode/
