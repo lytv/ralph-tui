@@ -427,7 +427,7 @@ function TaskMetadataView({
 /**
  * Timing summary component for the output view
  * Shows started time immediately, duration that updates every second while running,
- * and ended time when complete.
+ * and ended time when complete. Also displays model info when available.
  */
 function TimingSummary({ timing }: { timing?: IterationTimingInfo }): ReactNode {
   // Track elapsed time for running iterations
@@ -470,6 +470,14 @@ function TimingSummary({ timing }: { timing?: IterationTimingInfo }): ReactNode 
     durationDisplay = '—';
   }
 
+  // Parse model info for display
+  const modelDisplay = timing.model
+    ? (() => {
+        const [provider, model] = timing.model!.includes('/') ? timing.model!.split('/') : ['', timing.model!];
+        return { provider, model, full: timing.model! };
+      })()
+    : null;
+
   return (
     <box
       style={{
@@ -480,6 +488,16 @@ function TimingSummary({ timing }: { timing?: IterationTimingInfo }): ReactNode 
         backgroundColor: colors.bg.tertiary,
       }}
     >
+      {/* Model info row - show when model is available */}
+      {modelDisplay && (
+        <box style={{ flexDirection: 'row', marginBottom: 1 }}>
+          <text fg={colors.fg.muted}>Model: </text>
+          <text fg={colors.accent.primary}>
+            {modelDisplay.provider}/{modelDisplay.model}
+          </text>
+        </box>
+      )}
+      {/* Timing info row */}
       <box style={{ flexDirection: 'row', gap: 3 }}>
         <text fg={colors.fg.muted}>
           Started:{' '}

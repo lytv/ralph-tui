@@ -98,6 +98,8 @@ export interface HeaderProps {
   currentIteration?: number;
   /** Maximum iterations (0 = unlimited, for iteration progress display) */
   maxIterations?: number;
+  /** Current model being used (provider/model format, e.g., "anthropic/claude-3-5-sonnet") */
+  currentModel?: string;
 }
 
 /**
@@ -133,6 +135,8 @@ export interface IterationTimingInfo {
   durationMs?: number;
   /** Whether the iteration is currently running */
   isRunning?: boolean;
+  /** Model used for this iteration (provider/model format, e.g., "anthropic/claude-3-5-sonnet") */
+  model?: string;
 }
 
 /**

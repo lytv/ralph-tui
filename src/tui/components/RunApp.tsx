@@ -91,6 +91,8 @@ export interface RunAppProps {
   initialSubagentPanelVisible?: boolean;
   /** Callback when subagent panel visibility changes (to persist state) */
   onSubagentPanelVisibilityChange?: (visible: boolean) => void;
+  /** Current model being used (provider/model format, e.g., "anthropic/claude-3-5-sonnet") */
+  currentModel?: string;
 }
 
 /**
@@ -293,6 +295,7 @@ export function RunApp({
   currentEpicId,
   initialSubagentPanelVisible = false,
   onSubagentPanelVisibilityChange,
+  currentModel,
 }: RunAppProps): ReactNode {
   const { width, height } = useTerminalDimensions();
   const [tasks, setTasks] = useState<TaskItem[]>(() => {
@@ -1142,6 +1145,7 @@ export function RunApp({
         rateLimitState={rateLimitState}
         currentIteration={currentIteration}
         maxIterations={maxIterations}
+        currentModel={currentModel}
       />
 
       {/* Progress Dashboard - toggleable with 'd' key */}
